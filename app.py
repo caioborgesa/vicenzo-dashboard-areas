@@ -535,7 +535,7 @@ with pagina[4]:
     else:
         vgv_total = df_preco["PRECO"].sum()
         preco_medio = df_preco["PRECO"].mean()
-        preco_m2_medio = df_preco["PRECO_M2"].mean()
+        preco_m2_medio = df_preco["PRECO"].sum() / df_preco["AREA CALCULO DE PRECO"].sum()
         preco_min = df_preco["PRECO"].min()
         preco_max = df_preco["PRECO"].max()
 
@@ -598,7 +598,12 @@ with pagina[4]:
         st.markdown("---")
 
         st.subheader("Preço/m² Médio por Pavimento")
-        df_pav_preco = df_preco.groupby("PAVIMENTO", observed=True)["PRECO_M2"].mean().reset_index()
+        df_pav_preco = df_preco.groupby("PAVIMENTO", observed=True).agg(
+            PRECO_SUM=("PRECO", "sum"),
+            AREA_SUM=("AREA CALCULO DE PRECO", "sum"),
+        ).reset_index()
+        df_pav_preco["Preço/m² (R$)"] = df_pav_preco["PRECO_SUM"] / df_pav_preco["AREA_SUM"]
+        df_pav_preco = df_pav_preco[["PAVIMENTO", "Preço/m² (R$)"]]
         df_pav_preco.columns = ["Pavimento", "Preço/m² (R$)"]
 
         fig_pav_m2 = px.bar(
@@ -621,23 +626,29 @@ with pagina[4]:
         st.markdown("---")
 
         st.subheader("Resumo: Preço por Torre × Tipologia")
-        tabela_resumo = pd.pivot_table(
-            df_preco,
-            values=["PRECO", "PRECO_M2"],
+        tabela_resumo = df_preco.groupby(["TIPOLOGIA", "Torre_Nome"], observed=True).agg(
+            Preco_Medio=("PRECO", "mean"),
+            Preco_Sum=("PRECO", "sum"),
+            Area_Sum=("AREA CALCULO DE PRECO", "sum"),
+        ).reset_index()
+        tabela_resumo["Preco_M2"] = tabela_resumo["Preco_Sum"] / tabela_resumo["Area_Sum"]
+
+        tabela_pivot = pd.pivot_table(
+            tabela_resumo,
+            values=["Preco_Medio", "Preco_M2"],
             index="TIPOLOGIA",
             columns="Torre_Nome",
-            aggfunc="mean",
             observed=True,
         ).round(2)
 
-        tabela_resumo.columns = [
-            f"{col[0].replace('PRECO', 'Preço Médio').replace('PRECO_M2', 'Preço/m²')} — {col[1]}"
-            for col in tabela_resumo.columns
+        tabela_pivot.columns = [
+            f"{'Preço Médio' if col[0] == 'Preco_Medio' else 'Preço/m²'} — {col[1]}"
+            for col in tabela_pivot.columns
         ]
 
-        fmt = {c: "R$ {:,.2f}" for c in tabela_resumo.columns}
+        fmt = {c: "R$ {:,.2f}" for c in tabela_pivot.columns}
         st.dataframe(
-            tabela_resumo.style.format(fmt),
+            tabela_pivot.style.format(fmt),
             use_container_width=True,
         )
 
@@ -819,12 +830,10 @@ with pagina[6]:
 
         with col_graf2:
             st.subheader("Comparação com Médias")
-            preco_medio_pav = df_precos_completo[
-                df_precos_completo["PAVIMENTO"] == row["PAVIMENTO"]
-            ]["PRECO_M2"].mean()
-            preco_medio_torre = df_precos_completo[
-                df_precos_completo["Torre_Nome"] == row["Torre_Nome"]
-            ]["PRECO_M2"].mean()
+            df_pav = df_precos_completo[df_precos_completo["PAVIMENTO"] == row["PAVIMENTO"]]
+            preco_medio_pav = df_pav["PRECO"].sum() / df_pav["AREA CALCULO DE PRECO"].sum()
+            df_torre = df_precos_completo[df_precos_completo["Torre_Nome"] == row["Torre_Nome"]]
+            preco_medio_torre = df_torre["PRECO"].sum() / df_torre["AREA CALCULO DE PRECO"].sum()
 
             comparacao = pd.DataFrame({
                 "Referência": ["Esta Unidade", f"Média {row['PAVIMENTO']}", f"Média Torre {row['Torre_Nome']}"],
